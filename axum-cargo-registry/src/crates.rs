@@ -10,6 +10,7 @@ impl<RS> App<RS>
 where
     RS: RegistryStorage,
 {
+    /// Function that is used to register to the router for `/index/config.json`
     pub async fn get_crate(
         State(state): State<Arc<Self>>,
         Path((crate_name, version)): Path<(String, String)>,

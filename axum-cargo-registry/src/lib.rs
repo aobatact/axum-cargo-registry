@@ -13,12 +13,8 @@ pub struct App<RS> {
     registory_storage: RS,
 }
 
-#[derive(Debug)]
-pub struct Config {
-    domain: String,
-}
-
 impl<RS> App<RS> {
+    /// Create a new [`App`]
     pub fn new(config: Config, registory_storage: RS) -> Self {
         Self {
             config,
@@ -26,12 +22,15 @@ impl<RS> App<RS> {
         }
     }
 
+    /// Returns a reference to the registry storage.
     pub fn registory_storage(&self) -> &RS {
         &self.registory_storage
     }
+
     fn domain(&self) -> &str {
         &self.config.domain
     }
+
     fn dl_name(&self) -> String {
         format!("{}/crates/{{crate}}/{{version}}/download", self.domain())
     }
@@ -41,6 +40,7 @@ impl<RS> App<RS>
 where
     RS: RegistryStorage,
 {
+    /// Consume and create a new [`Router`].
     pub fn create_router(self) -> Router {
         Router::new()
             .nest(
@@ -54,6 +54,19 @@ where
                 get(Self::get_crate),
             )
             .with_state(Arc::new(self))
+    }
+}
+
+#[derive(Debug)]
+pub struct Config {
+    /// Domain of the registry.
+    pub domain: String,
+}
+
+impl Config {
+    /// Create a new [`Config`]
+    pub fn new(domain: String) -> Self {
+        Self { domain }
     }
 }
 
