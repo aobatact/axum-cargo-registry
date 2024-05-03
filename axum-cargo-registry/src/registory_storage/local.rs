@@ -1,6 +1,7 @@
-use crate::header_util::{self, get_modified_since};
+//! Local storage backend for the registry.
 
 use super::RegistryStorage;
+use crate::header_util::{self, get_modified_since};
 use axum::{
     body::Bytes,
     http::StatusCode,
@@ -8,12 +9,24 @@ use axum::{
 };
 use std::{io::Read, path::PathBuf, time::SystemTime};
 
+/// Local storage backend
 pub struct LocalStorage {
     index_path: PathBuf,
     crate_path: PathBuf,
 }
 
 impl LocalStorage {
+    /// Create a new [`LocalStorage`]
+    pub fn new(index_path: PathBuf, crate_path: PathBuf) -> Self {
+        Self {
+            index_path,
+            crate_path,
+        }
+    }
+
+    /// Get a local file for the path.
+    ///
+    /// If the file is not modified since `last_modified`, it will return a 304.
     async fn get_local_file(path: PathBuf, last_modified: Option<SystemTime>) -> Response {
         fn inner(
             path: PathBuf,
@@ -32,9 +45,7 @@ impl LocalStorage {
         }
         let (vec, time) = match inner(path, last_modified) {
             Ok(Some(f)) => f,
-            Ok(None) => {
-                todo!()
-            }
+            Ok(None) => return (StatusCode::NOT_MODIFIED).into_response(),
             Err(e) => match e.kind() {
                 std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied => {
                     return StatusCode::NOT_FOUND.into_response()

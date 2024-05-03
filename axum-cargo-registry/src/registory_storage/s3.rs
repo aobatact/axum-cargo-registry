@@ -1,3 +1,7 @@
+//! S3 storage backend for the registry.
+
+use super::RegistryStorage;
+use crate::header_util::get_if_none_match;
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{error::SdkError, presigning::PresigningConfig};
 use axum::{
@@ -5,10 +9,6 @@ use axum::{
     response::{AppendHeaders, IntoResponse, Redirect, Response},
 };
 use std::time::Duration;
-
-use crate::header_util::get_if_none_match;
-
-use super::RegistryStorage;
 
 /// S3 storage backend
 #[derive(Debug)]
