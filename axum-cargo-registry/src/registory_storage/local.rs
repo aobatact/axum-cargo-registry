@@ -32,6 +32,7 @@ impl LocalStorage {
             path: PathBuf,
             last_modified: Option<SystemTime>,
         ) -> Result<Option<(Vec<u8>, SystemTime)>, std::io::Error> {
+            tracing::trace!(path = ?path, "Getting local file");
             let mut vec = vec![];
             let file = &mut std::fs::File::open(path)?;
             let time = file.metadata()?.modified()?;
@@ -78,8 +79,8 @@ impl RegistryStorage for LocalStorage {
         version: &str,
     ) -> impl std::future::Future<Output = impl axum::response::IntoResponse> + Send {
         let last = get_modified_since(headers);
-        let mut path = self.crate_path.clone();
+        let mut path: PathBuf = self.crate_path.clone();
         path.push(format!("{crate_name}/{version}.crate"));
-        Self::get_local_file(self.crate_path.join(path), last)
+        Self::get_local_file(path, last)
     }
 }

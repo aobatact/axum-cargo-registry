@@ -1,2 +1,4 @@
 [workspace]
 members = ["axum-cargo-registry"]
+resolver = "2"
+exclude = ["crate-test/import-test-crate"]

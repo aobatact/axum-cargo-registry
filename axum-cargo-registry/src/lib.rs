@@ -1,4 +1,8 @@
-use axum::{routing::get, Router};
+use axum::{
+    http::{StatusCode, Uri},
+    routing::get,
+    Router,
+};
 use registory_storage::RegistryStorage;
 use std::sync::Arc;
 
@@ -42,6 +46,8 @@ where
 {
     /// Consume and create a new [`Router`].
     pub fn create_router(self) -> Router {
+        tracing::info!("Creating router");
+
         Router::new()
             .nest(
                 "/index",
@@ -53,8 +59,14 @@ where
                 "/crates/:crate_name/:version/download",
                 get(Self::get_crate),
             )
+            .fallback(fallback)
             .with_state(Arc::new(self))
     }
+}
+
+async fn fallback(uri: Uri) -> StatusCode {
+    tracing::info!(uri = %uri, "Not found");
+    StatusCode::NOT_FOUND
 }
 
 #[derive(Debug)]
