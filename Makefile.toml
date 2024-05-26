@@ -1,0 +1,8 @@
+[tasks.local-run]
+command = "cargo"
+args = ["run", "--bin", "local-axum-cargo-registry", ]
+workspace = false
+
+[tasks.local-run.env]
+"RUST_LOG" = "trace,local_registry=trace,local_axum_cargo_registry=trace" 
+"REGISTRY_PATH" = "../crate-test/local-storage"

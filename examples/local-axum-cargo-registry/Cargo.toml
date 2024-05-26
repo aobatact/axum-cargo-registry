@@ -1,0 +1,13 @@
+[package]
+name = "local-axum-cargo-registry"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+axum-cargo-registry = { path = "../../axum-cargo-registry"}
+axum = { version = "0.7.5", features = ["json", "tokio", "http1", "http2"] }
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread"] }
+tracing = { version = "0.1" }
