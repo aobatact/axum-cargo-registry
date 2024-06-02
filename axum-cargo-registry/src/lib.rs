@@ -46,7 +46,7 @@ where
 {
     /// Consume and create a new [`Router`].
     pub fn create_router(self) -> Router {
-        tracing::info!("Creating router");
+        tracing::debug!("Creating router");
 
         Router::new()
             .nest(
