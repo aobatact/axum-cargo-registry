@@ -23,6 +23,7 @@ where
         Path(crate_index_path): Path<String>,
         headers: HeaderMap,
     ) -> Response {
+        tracing::trace!(crate_index_path = %crate_index_path, "Getting index");
         state
             .registory_storage()
             .get_index(&headers, &crate_index_path)

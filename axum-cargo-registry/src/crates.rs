@@ -16,6 +16,7 @@ where
         Path((crate_name, version)): Path<(String, String)>,
         headers: HeaderMap,
     ) -> Response {
+        tracing::trace!(crate_name = %crate_name, version = %version, "Getting crate");
         state
             .registory_storage()
             .get_crate(&headers, &crate_name, &version)

@@ -1,0 +1,25 @@
+[tasks.local-run]
+command = "cargo"
+args = ["run", "--bin", "local-axum-cargo-registry", ]
+workspace = false
+
+[tasks.local-run.env]
+"RUST_LOG" = "trace,local_registry=trace,local_axum_cargo_registry=trace" 
+"REGISTRY_PATH" = "../crate-test/local-storage"
+
+[tasks.download-test-crate]
+workspace = false
+script = '''
+index_target="crate-test/local-storage/index/tr/y-"
+mkdir -p $index_target
+curl https://index.crates.io/tr/y-/try-partialord > $index_target/try-partialord
+crate_target="crate-test/local-storage/crates/try-partialord"
+curl https://crates.io/api/v1/crates/try-partialord/0.1.3/download > $crate_target/0.1.3.crate
+'''
+
+[tasks.local-run-check]
+workspace = false
+script = '''
+cd crate-test/import-test-crate
+cargo check
+'''
