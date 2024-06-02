@@ -65,7 +65,7 @@ where
 }
 
 async fn fallback(uri: Uri) -> StatusCode {
-    tracing::info!(uri = %uri, "Not found");
+    tracing::debug!(uri = %uri, "Not found");
     StatusCode::NOT_FOUND
 }
 
