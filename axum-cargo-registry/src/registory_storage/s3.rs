@@ -146,6 +146,8 @@ impl S3RegistoryStorage {
                     let status = raw.status();
                     if status.is_server_error() {
                         tracing::error!("ResponseError ({}): {:?}", status, raw);
+                    } else {
+                        tracing::debug!("ResponseError ({}): {:?}", status, raw);
                     }
                     (
                         StatusCode::from_u16(status.as_u16())
@@ -156,9 +158,13 @@ impl S3RegistoryStorage {
                 }
                 other => match other.into_service_error() {
                     aws_sdk_s3::operation::get_object::GetObjectError::NoSuchKey(_) => {
+                        tracing::debug!("Key not found");
                         StatusCode::NOT_FOUND.into_response()
                     }
-                    e => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+                    e => {
+                        tracing::debug!("{e:?}");
+                        (StatusCode::BAD_REQUEST, e.to_string()).into_response()
+                    }
                 },
             },
         }
