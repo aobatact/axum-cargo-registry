@@ -125,7 +125,7 @@ impl S3RegistoryStorage {
         bucket_name: String,
         object_key: String,
     ) -> Response {
-        tracing::debug!(bucket_name, object_key);
+        tracing::debug!(bucket_name, object_key, "Creating presigned request");
         tracing::trace!(headers = ?headers);
         let result = self
             .client
@@ -146,6 +146,7 @@ impl S3RegistoryStorage {
                     let raw = e.into_raw();
                     let status = raw.status();
                     if status.as_u16() == StatusCode::NOT_MODIFIED.as_u16() {
+                        tracing::trace!("Not modified");
                         return StatusCode::NOT_MODIFIED.into_response();
                     }
                     if status.is_server_error() {
