@@ -21,9 +21,9 @@ curl https://crates.io/api/v1/crates/try-partialord/0.1.3/download > $crate_targ
 workspace = false
 script = '''
 cd crate-test/import-test-crate
-cargo clean
 cargo check
 cargo build
+rm Cargo.lock
 '''
 
 [tasks.minio-init]
@@ -33,7 +33,7 @@ docker compose -f crate-test/dockercompose.yaml up
 '''
 
 [tasks.local-run-s3]
-dependencies = [ "local-run-s3-prepare-bucket" ]
+dependencies = [ "local-run-s3-prepare-sync" ]
 command = "cargo"
 args = ["run", "--bin", "axum-cargo-registry-s3", ]
 workspace = false
@@ -48,6 +48,7 @@ echo "INIT" > crate-test/S3_BUCKET_INIT
 '''
 
 [tasks.local-run-s3-prepare-sync]
+dependencies = [ "local-run-s3-prepare-bucket" ]
 workspace = false
 script = '''
 aws s3 sync crate-test/local-storage/index s3://index

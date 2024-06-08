@@ -103,7 +103,7 @@ impl S3RegistoryStorage {
 
     /// Create a new [`S3RegistoryStorage`] from environment variables.
     pub async fn from_env() -> Result<Self, Error> {
-        let config = aws_config::defaults(BehaviorVersion::v2023_11_09())
+        let config = aws_config::defaults(BehaviorVersion::v2024_03_28())
             .load()
             .await;
         let client = aws_sdk_s3::Client::new(&config);
@@ -126,6 +126,7 @@ impl S3RegistoryStorage {
         object_key: String,
     ) -> Response {
         tracing::debug!(bucket_name, object_key);
+        tracing::trace!(headers = ?headers);
         let result = self
             .client
             .get_object()
@@ -144,6 +145,9 @@ impl S3RegistoryStorage {
                 SdkError::ResponseError(e) => {
                     let raw = e.into_raw();
                     let status = raw.status();
+                    if status.as_u16() == StatusCode::NOT_MODIFIED.as_u16() {
+                        return StatusCode::NOT_MODIFIED.into_response();
+                    }
                     if status.is_server_error() {
                         tracing::error!("ResponseError ({}): {:?}", status, raw);
                     } else {
