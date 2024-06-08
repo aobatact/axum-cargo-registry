@@ -1,11 +1,11 @@
+env_files = [
+    "crate-test/test.env"
+]
+
 [tasks.local-run]
 command = "cargo"
 args = ["run", "--bin", "local-axum-cargo-registry", ]
 workspace = false
-
-[tasks.local-run.env]
-"RUST_LOG" = "trace,local_registry=trace,local_axum_cargo_registry=trace" 
-"REGISTRY_PATH" = "../crate-test/local-storage"
 
 [tasks.download-test-crate]
 workspace = false
@@ -22,4 +22,35 @@ workspace = false
 script = '''
 cd crate-test/import-test-crate
 cargo check
+cargo build
+rm Cargo.lock
+'''
+
+[tasks.minio-init]
+workspace = false
+script = '''
+docker compose -f crate-test/dockercompose.yaml up
+'''
+
+[tasks.local-run-s3]
+dependencies = [ "local-run-s3-prepare-sync" ]
+command = "cargo"
+args = ["run", "--bin", "axum-cargo-registry-s3", ]
+workspace = false
+
+[tasks.local-run-s3-prepare-bucket]
+condition = { files_not_exist = ["crate-test/S3_BUCKET_INIT"] }
+workspace = false
+script = '''
+aws s3api create-bucket --bucket index
+aws s3api create-bucket --bucket crates
+echo "INIT" > crate-test/S3_BUCKET_INIT
+'''
+
+[tasks.local-run-s3-prepare-sync]
+dependencies = [ "local-run-s3-prepare-bucket" ]
+workspace = false
+script = '''
+aws s3 sync crate-test/local-storage/index s3://index
+aws s3 sync crate-test/local-storage/crates s3://crates
 '''
