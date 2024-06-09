@@ -476,6 +476,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-s3",
  "axum",
+ "serde",
  "serde_json",
  "thiserror",
  "time",
