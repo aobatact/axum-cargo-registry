@@ -1,13 +1,14 @@
 //! S3 storage backend for the registry.
 
 use super::RegistryStorage;
-use crate::header_util::get_if_none_match;
+use crate::{crate_utils::crate_name_to_index, header_util::get_if_none_match};
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{error::SdkError, presigning::PresigningConfig};
 use axum::{
     http::{HeaderMap, StatusCode},
     response::{AppendHeaders, IntoResponse, Redirect, Response},
 };
+use futures_util::{FutureExt, Stream, StreamExt};
 use std::time::Duration;
 
 /// S3 storage backend
@@ -177,7 +178,7 @@ impl S3RegistoryStorage {
 }
 
 impl RegistryStorage for S3RegistoryStorage {
-    fn get_index(
+    fn get_index_file(
         &self,
         headers: &axum::http::HeaderMap,
         index_path: &str,
@@ -189,7 +190,7 @@ impl RegistryStorage for S3RegistoryStorage {
         )
     }
 
-    fn get_crate(
+    fn get_crate_file(
         &self,
         headers: &axum::http::HeaderMap,
         crate_name: &str,
@@ -200,5 +201,29 @@ impl RegistryStorage for S3RegistoryStorage {
             self.config.crate_bucket.clone(),
             format!("{}{crate_name}/{version}", self.config.crate_prefix),
         )
+    }
+
+    fn get_index_data(
+        &self,
+        crate_name: &str,
+    ) -> impl futures_util::TryStream<Ok = crate::index::Index, Error = axum::Error> + Send
+    where
+        Self: Sized,
+    {
+        futures_util::stream::empty() //todo
+
+        // futures_util::stream::once(async {
+        //     let items = self
+        //         .client
+        //         .get_object()
+        //         .bucket(&self.config.index_bucket)
+        //         .key(format!(
+        //             "{}{}",
+        //             self.config.index_prefix,
+        //             crate_name_to_index(crate_name)
+        //         ))
+        //         .send()
+        //         .await?;
+        // })
     }
 }

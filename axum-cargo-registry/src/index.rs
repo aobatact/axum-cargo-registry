@@ -5,8 +5,8 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use serde::{ser::SerializeStruct, Serialize};
-use std::sync::Arc;
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
+use std::{collections::HashMap, sync::Arc};
 
 #[derive(Debug)]
 pub struct IndexConfig<RS> {
@@ -46,8 +46,35 @@ where
         tracing::trace!(crate_index_path = %crate_index_path, "Getting index");
         state
             .registory_storage()
-            .get_index(&headers, &crate_index_path)
+            .get_index_file(&headers, &crate_index_path)
             .await
             .into_response()
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Dependency {
+    name: String,
+    req: String,
+    features: Vec<String>,
+    optional: bool,
+    default_features: bool,
+    target: Option<String>,
+    kind: String,
+    registry: Option<String>,
+    package: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Index {
+    name: String,
+    vers: String,
+    deps: Vec<Dependency>,
+    cksum: String,
+    features: HashMap<String, Vec<String>>,
+    yanked: bool,
+    links: Option<String>,
+    v: u32,
+    features2: Option<HashMap<String, Vec<String>>>,
+    rust_version: String,
 }

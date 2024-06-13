@@ -19,7 +19,7 @@ where
         tracing::trace!(crate_name = %crate_name, version = %version, "Getting crate");
         state
             .registory_storage()
-            .get_crate(&headers, &crate_name, &version)
+            .get_crate_file(&headers, &crate_name, &version)
             .await
             .into_response()
     }
