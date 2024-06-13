@@ -8,8 +8,9 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{AppendHeaders, IntoResponse, Redirect, Response},
 };
-use futures_util::{FutureExt, Stream, StreamExt};
+use futures_util::{future, TryStreamExt};
 use std::time::Duration;
+use tokio_stream::wrappers::LinesStream;
 
 /// S3 storage backend
 #[derive(Debug)]
@@ -38,15 +39,11 @@ impl StorageConfig {
         mut crate_prefix: String,
         presigned_expire: Duration,
     ) -> Self {
-        if !index_prefix.ends_with('/') {
-            if !index_prefix.is_empty() {
-                index_prefix.push('/')
-            }
+        if !index_prefix.ends_with('/') && !index_prefix.is_empty() {
+            index_prefix.push('/')
         }
-        if !crate_prefix.ends_with('/') {
-            if !crate_prefix.is_empty() {
-                crate_prefix.push('/')
-            }
+        if !crate_prefix.ends_with('/') && !crate_prefix.is_empty() {
+            crate_prefix.push('/')
         }
 
         Self {
@@ -119,6 +116,14 @@ impl S3RegistoryStorage {
             .unwrap()
     }
 
+    pub fn crate_name_to_index_key(&self, crate_name: &str) -> String {
+        format!(
+            "{}{}",
+            self.config.index_prefix,
+            crate_name_to_index(crate_name)
+        )
+    }
+
     /// Create a presigned request for S3
     pub async fn create_get_presigned_request(
         &self,
@@ -133,7 +138,7 @@ impl S3RegistoryStorage {
             .get_object()
             .bucket(bucket_name)
             .key(object_key)
-            .set_if_none_match(get_if_none_match(&headers))
+            .set_if_none_match(get_if_none_match(headers))
             .presigned(self.presigned_config())
             .await;
         match result {
@@ -210,20 +215,24 @@ impl RegistryStorage for S3RegistoryStorage {
     where
         Self: Sized,
     {
-        futures_util::stream::empty() //todo
+        use tokio::io::AsyncBufReadExt;
 
-        // futures_util::stream::once(async {
-        //     let items = self
-        //         .client
-        //         .get_object()
-        //         .bucket(&self.config.index_bucket)
-        //         .key(format!(
-        //             "{}{}",
-        //             self.config.index_prefix,
-        //             crate_name_to_index(crate_name)
-        //         ))
-        //         .send()
-        //         .await?;
-        // })
+        futures_util::stream::once(async {
+            Ok(LinesStream::new(
+                self.client
+                    .get_object()
+                    .bucket(&self.config.index_bucket)
+                    .key(self.crate_name_to_index_key(crate_name))
+                    .send()
+                    .await
+                    .map_err(axum::Error::new)?
+                    .body
+                    .into_async_read()
+                    .lines(),
+            )
+            .map_err(axum::Error::new))
+        })
+        .try_flatten()
+        .and_then(|line| future::ready(serde_json::from_str(&line).map_err(axum::Error::new)))
     }
 }
