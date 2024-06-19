@@ -2,7 +2,7 @@
 name = "axum-cargo-registry"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.77"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -18,10 +18,11 @@ time = { version = "0.3.36", optional = true }
 futures-util = { version = "0.3.30"}
 tokio = { version = "1", optional = true, default-features = false }
 tokio-stream = {version = "0.1.15",optional = true, default-features = false, features = ["io-util"]}
+sha2 = { version = "0.10.8", optional = true}
 
 [features]
 default = ["storage-s3", "storage-local", "parse-time", "api"]
 storage-s3 = ["dep:aws-config", "dep:aws-sdk-s3", "dep:tokio", "tokio/io-util", "dep:tokio-stream"]
 storage-local = []
 parse-time = ["dep:time", "time/formatting", "time/parsing"] 
-api = ["serde/derive"]
+api = ["serde/derive", "dep:sha2"]

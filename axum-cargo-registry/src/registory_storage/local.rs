@@ -1,6 +1,6 @@
 //! Local storage backend for the registry.
 
-use super::{RegistryStorage, WritableRegistryStorage};
+use super::{RegistryStorage, RegistryStorageError, WritableRegistryStorage};
 use crate::{
     crate_utils::crate_name_to_index,
     header_util::{self, get_modified_since},
@@ -71,7 +71,7 @@ impl LocalStorage {
             .into_response()
     }
 
-    async fn create_new_local_file(path: PathBuf, data: Vec<u8>) -> Response {
+    async fn create_new_local_file(path: PathBuf, data: &[u8]) -> Result<(), axum::Error> {
         let mut file = match std::fs::File::options()
             .read(true)
             .write(true)
@@ -80,28 +80,15 @@ impl LocalStorage {
         {
             Ok(f) => f,
             Err(e) => {
-                let kind = e.kind();
                 tracing::error!(?e, path = %path.display(), "Failed to open file");
-                return match kind {
-                    std::io::ErrorKind::PermissionDenied => StatusCode::FORBIDDEN.into_response(),
-                    std::io::ErrorKind::AlreadyExists => {
-                        (StatusCode::CONFLICT, "Already Exists").into_response()
-                    }
-                    _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-                };
+                return Err(e).map_err(axum::Error::new);
             }
         };
         if let Err(e) = file.write_all(&data) {
-            let kind = e.kind();
             tracing::error!(?e, path = %path.display(), "Failed to write to file");
-            match kind {
-                std::io::ErrorKind::PermissionDenied => {
-                    return StatusCode::FORBIDDEN.into_response()
-                }
-                _ => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-            }
+            return Err(e).map_err(axum::Error::new);
         }
-        StatusCode::OK.into_response()
+        Ok(())
     }
 }
 
@@ -127,42 +114,45 @@ impl RegistryStorage for LocalStorage {
         Self::get_local_file(path, last)
     }
 
+    #[cfg(feature = "api")]
     fn get_index_data(
         &self,
         crate_name: &str,
-    ) -> impl futures_util::TryStream<Ok = crate::index::Index, Error = axum::Error> + Send
+    ) -> impl futures_util::TryStream<Ok = crate::index::IndexData, Error = RegistryStorageError> + Send
     where
         Self: Sized,
     {
         match std::fs::read(crate_name_to_index(crate_name)) {
             Ok(data) => {
                 let items = Cursor::new(data).lines().map(|line| {
-                    line.map_err(Error::new)
-                        .and_then(|s| serde_json::from_str(&s).map_err(Error::new))
+                    line.map_err(RegistryStorageError::new)
+                        .and_then(|s| serde_json::from_str(&s).map_err(RegistryStorageError::new))
                 });
                 futures_util::stream::iter(items).left_stream()
             }
-            Err(e) => futures_util::stream::once(async { Err(Error::new(e)) }).right_stream(),
+            Err(e) => futures_util::stream::once(async { Err(RegistryStorageError::new(e)) })
+                .right_stream(),
         }
     }
 }
 
+#[cfg(feature = "api")]
 impl WritableRegistryStorage for LocalStorage {
     async fn put_index(
         &self,
-        headers: &axum::http::HeaderMap,
         index_path: &str,
-        data: Vec<u8>,
-    ) -> impl IntoResponse {
+        data: crate::index::IndexData,
+        prev_data: Vec<crate::index::IndexData>,
+    ) -> Result<(), axum::Error> {
+        todo!()
     }
 
     async fn put_crate(
         &self,
-        headers: &axum::http::HeaderMap,
         crate_name: &str,
         version: &str,
-        data: Vec<u8>,
-    ) -> impl IntoResponse {
+        data: &[u8],
+    ) -> Result<(), axum::Error> {
         Self::create_new_local_file(
             self.crate_path
                 .join(format!("{crate_name}/{version}.crate")),

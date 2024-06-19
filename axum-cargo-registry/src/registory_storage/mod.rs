@@ -1,7 +1,12 @@
-use axum::{http::HeaderMap, response::IntoResponse, Error};
+use axum::{
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
+    Error,
+};
 use std::future::Future;
 
-use crate::index::Index;
+#[cfg(feature = "api")]
+use crate::index::IndexData;
 
 #[cfg(feature = "storage-local")]
 pub mod local;
@@ -10,10 +15,11 @@ pub mod s3;
 
 /// Trait that defines the interface for the storage backend
 pub trait RegistryStorage: Send + Sync + 'static {
+    #[cfg(feature = "api")]
     fn get_index_data(
         &self,
         crate_name: &str,
-    ) -> impl futures_util::TryStream<Ok = Index, Error = Error> + Send
+    ) -> impl futures_util::TryStream<Ok = IndexData, Error = RegistryStorageError> + Send
     where
         Self: Sized;
     /// Get the index file
@@ -31,21 +37,47 @@ pub trait RegistryStorage: Send + Sync + 'static {
     ) -> impl Future<Output = impl IntoResponse> + Send;
 }
 
+#[cfg(feature = "api")]
 pub trait WritableRegistryStorage: RegistryStorage {
     /// Put the index file
     fn put_index(
         &self,
-        headers: &HeaderMap,
         index_path: &str,
-        data: Vec<u8>,
-    ) -> impl Future<Output = impl IntoResponse> + Send;
+        data: IndexData,
+        prev_data: Vec<IndexData>,
+    ) -> impl Future<Output = Result<(), axum::Error>> + Send;
 
     /// Put a crate file
     fn put_crate(
         &self,
-        headers: &HeaderMap,
         crate_name: &str,
         version: &str,
-        data: Vec<u8>,
-    ) -> impl Future<Output = impl IntoResponse> + Send;
+        data: &[u8],
+    ) -> impl Future<Output = Result<(), axum::Error>> + Send;
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum RegistryStorageError {
+    #[error("Not Found")]
+    NotFound,
+    #[error(transparent)]
+    Other(Box<dyn std::error::Error + Send + Sync>),
+}
+
+impl RegistryStorageError {
+    pub fn new<E: Into<Box<dyn std::error::Error + Send + Sync>>>(e: E) -> Self {
+        RegistryStorageError::Other(e.into())
+    }
+}
+
+impl IntoResponse for RegistryStorageError {
+    fn into_response(self) -> axum::response::Response {
+        match self {
+            RegistryStorageError::NotFound => StatusCode::NOT_FOUND.into_response(),
+            RegistryStorageError::Other(e) => {
+                tracing::error!("{:?}", e);
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        }
+    }
 }

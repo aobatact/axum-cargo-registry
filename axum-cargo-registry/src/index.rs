@@ -52,29 +52,31 @@ where
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api", derive(Deserialize, Serialize))]
+#[derive(Debug)]
 pub struct Dependency {
-    name: String,
-    req: String,
-    features: Vec<String>,
-    optional: bool,
-    default_features: bool,
-    target: Option<String>,
-    kind: String,
-    registry: Option<String>,
-    package: Option<String>,
+    pub name: String,
+    pub req: String,
+    pub features: Vec<String>,
+    pub optional: bool,
+    pub default_features: bool,
+    pub target: Option<String>,
+    pub kind: String,
+    pub registry: Option<String>,
+    pub package: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct Index {
-    name: String,
-    vers: String,
-    deps: Vec<Dependency>,
-    cksum: String,
-    features: HashMap<String, Vec<String>>,
-    yanked: bool,
-    links: Option<String>,
-    v: u32,
-    features2: Option<HashMap<String, Vec<String>>>,
-    rust_version: String,
+#[cfg_attr(feature = "api", derive(Deserialize, Serialize))]
+#[derive(Debug)]
+pub struct IndexData {
+    pub name: String,
+    pub vers: String,
+    pub deps: Vec<Dependency>,
+    pub cksum: String,
+    pub features: HashMap<String, Vec<String>>,
+    pub yanked: bool,
+    pub links: Option<String>,
+    pub v: u32,
+    pub features2: Option<HashMap<String, Vec<String>>>,
+    pub rust_version: Option<String>,
 }

@@ -1,6 +1,7 @@
 //! S3 storage backend for the registry.
 
 use super::RegistryStorage;
+use super::RegistryStorageError;
 use crate::{crate_utils::crate_name_to_index, header_util::get_if_none_match};
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{error::SdkError, presigning::PresigningConfig};
@@ -8,8 +9,9 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{AppendHeaders, IntoResponse, Redirect, Response},
 };
-use futures_util::{future, TryStreamExt};
-use std::time::Duration;
+use futures_util::TryStreamExt;
+use std::{future::ready, time::Duration};
+use tokio::io::AsyncBufReadExt;
 use tokio_stream::wrappers::LinesStream;
 
 /// S3 storage backend
@@ -208,15 +210,14 @@ impl RegistryStorage for S3RegistoryStorage {
         )
     }
 
+    #[cfg(feature = "api")]
     fn get_index_data(
         &self,
         crate_name: &str,
-    ) -> impl futures_util::TryStream<Ok = crate::index::Index, Error = axum::Error> + Send
+    ) -> impl futures_util::TryStream<Ok = crate::index::IndexData, Error = RegistryStorageError> + Send
     where
         Self: Sized,
     {
-        use tokio::io::AsyncBufReadExt;
-
         futures_util::stream::once(async {
             Ok(LinesStream::new(
                 self.client
@@ -225,14 +226,27 @@ impl RegistryStorage for S3RegistoryStorage {
                     .key(self.crate_name_to_index_key(crate_name))
                     .send()
                     .await
-                    .map_err(axum::Error::new)?
+                    .map_err(RegistryStorageError::new)?
                     .body
                     .into_async_read()
                     .lines(),
             )
-            .map_err(axum::Error::new))
+            .map_err(RegistryStorageError::new))
         })
         .try_flatten()
-        .and_then(|line| future::ready(serde_json::from_str(&line).map_err(axum::Error::new)))
+        .and_then(|line: String| {
+            ready(serde_json::from_str(&line).map_err(RegistryStorageError::new))
+        })
+    }
+}
+
+impl RegistryStorageError {
+    pub fn from_s3_error(error: aws_sdk_s3::Error) -> Self {
+        match error {
+            aws_sdk_s3::Error::NoSuchKey(_) | aws_sdk_s3::Error::NotFound(_) => {
+                RegistryStorageError::NotFound
+            }
+            e => RegistryStorageError::new(e),
+        }
     }
 }
