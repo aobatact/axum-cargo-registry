@@ -9,7 +9,6 @@ use axum::{
     body::Bytes,
     http::StatusCode,
     response::{AppendHeaders, IntoResponse, Response},
-    Error,
 };
 use futures_util::StreamExt;
 use std::{
@@ -81,12 +80,12 @@ impl LocalStorage {
             Ok(f) => f,
             Err(e) => {
                 tracing::error!(?e, path = %path.display(), "Failed to open file");
-                return Err(e).map_err(axum::Error::new);
+                return Err(axum::Error::new(e));
             }
         };
-        if let Err(e) = file.write_all(&data) {
+        if let Err(e) = file.write_all(data) {
             tracing::error!(?e, path = %path.display(), "Failed to write to file");
-            return Err(e).map_err(axum::Error::new);
+            return Err(axum::Error::new(e));
         }
         Ok(())
     }

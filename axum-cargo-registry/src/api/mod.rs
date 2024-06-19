@@ -1,12 +1,8 @@
-use axum::{
-    body::Bytes,
-    extract::State,
-    http::{HeaderMap, StatusCode},
-};
+use axum::{body::Bytes, extract::State, http::StatusCode};
 use futures_util::stream::TryStreamExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{collections::HashMap, fmt::LowerHex, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     crate_utils::crate_name_to_index,
@@ -76,6 +72,11 @@ pub struct Package {
     pub rust_version: Option<String>,
 }
 
+type Features = (
+    HashMap<String, Vec<String>>,
+    Option<HashMap<String, Vec<String>>>,
+);
+
 impl Package {
     pub fn into_index(self, checksum: String) -> IndexData {
         let (features, features2) = Package::features_selector(self.features);
@@ -97,12 +98,7 @@ impl Package {
         }
     }
 
-    fn features_selector(
-        features: HashMap<String, Vec<String>>,
-    ) -> (
-        HashMap<String, Vec<String>>,
-        Option<HashMap<String, Vec<String>>>,
-    ) {
+    fn features_selector(features: HashMap<String, Vec<String>>) -> Features {
         if features.iter().any(|(_, v)| {
             v.iter()
                 .any(|feat| feat.starts_with("dep") || feat.contains('?'))
@@ -138,7 +134,7 @@ impl<RS: WritableRegistryStorage> App<RS> {
         let prev_index_array = state.get_index_data(&pacakge).await?;
 
         let mut hasher = Sha256::new();
-        hasher.update(&dot_crate);
+        hasher.update(dot_crate);
         let sha_hash = hasher.finalize();
 
         let crate_name = pacakge.name.clone();
@@ -176,7 +172,7 @@ impl<RS: WritableRegistryStorage> App<RS> {
             .await;
         match res {
             Ok(vec) => {
-                if vec.iter().any(|index| index.vers == *&pacakge.vers) {
+                if vec.iter().any(|index| index.vers == pacakge.vers) {
                     Err((
                         StatusCode::CONFLICT,
                         axum::Error::new("Version already exists"),

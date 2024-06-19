@@ -147,7 +147,7 @@ impl S3RegistoryStorage {
             Ok(out) => {
                 let uri = out.uri();
                 tracing::trace!(uri, "presigned");
-                ((AppendHeaders(out.headers()), Redirect::temporary(uri))).into_response()
+                (AppendHeaders(out.headers()), Redirect::temporary(uri)).into_response()
             }
             Err(e) => match e {
                 SdkError::ResponseError(e) => {

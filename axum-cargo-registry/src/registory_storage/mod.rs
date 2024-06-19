@@ -1,7 +1,6 @@
 use axum::{
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    Error,
 };
 use std::future::Future;
 
