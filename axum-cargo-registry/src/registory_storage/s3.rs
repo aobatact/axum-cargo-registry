@@ -1,14 +1,18 @@
 //! S3 storage backend for the registry.
 
 use super::RegistryStorage;
-use crate::header_util::get_if_none_match;
+use super::RegistryStorageError;
+use crate::{crate_utils::crate_name_to_index, header_util::get_if_none_match};
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{error::SdkError, presigning::PresigningConfig};
 use axum::{
     http::{HeaderMap, StatusCode},
     response::{AppendHeaders, IntoResponse, Redirect, Response},
 };
-use std::time::Duration;
+use futures_util::TryStreamExt;
+use std::{future::ready, time::Duration};
+use tokio::io::AsyncBufReadExt;
+use tokio_stream::wrappers::LinesStream;
 
 /// S3 storage backend
 #[derive(Debug)]
@@ -37,15 +41,11 @@ impl StorageConfig {
         mut crate_prefix: String,
         presigned_expire: Duration,
     ) -> Self {
-        if !index_prefix.ends_with('/') {
-            if !index_prefix.is_empty() {
-                index_prefix.push('/')
-            }
+        if !index_prefix.ends_with('/') && !index_prefix.is_empty() {
+            index_prefix.push('/')
         }
-        if !crate_prefix.ends_with('/') {
-            if !crate_prefix.is_empty() {
-                crate_prefix.push('/')
-            }
+        if !crate_prefix.ends_with('/') && !crate_prefix.is_empty() {
+            crate_prefix.push('/')
         }
 
         Self {
@@ -118,6 +118,14 @@ impl S3RegistoryStorage {
             .unwrap()
     }
 
+    pub fn crate_name_to_index_key(&self, crate_name: &str) -> String {
+        format!(
+            "{}{}",
+            self.config.index_prefix,
+            crate_name_to_index(crate_name)
+        )
+    }
+
     /// Create a presigned request for S3
     pub async fn create_get_presigned_request(
         &self,
@@ -132,14 +140,14 @@ impl S3RegistoryStorage {
             .get_object()
             .bucket(bucket_name)
             .key(object_key)
-            .set_if_none_match(get_if_none_match(&headers))
+            .set_if_none_match(get_if_none_match(headers))
             .presigned(self.presigned_config())
             .await;
         match result {
             Ok(out) => {
                 let uri = out.uri();
                 tracing::trace!(uri, "presigned");
-                ((AppendHeaders(out.headers()), Redirect::temporary(uri))).into_response()
+                (AppendHeaders(out.headers()), Redirect::temporary(uri)).into_response()
             }
             Err(e) => match e {
                 SdkError::ResponseError(e) => {
@@ -177,7 +185,7 @@ impl S3RegistoryStorage {
 }
 
 impl RegistryStorage for S3RegistoryStorage {
-    fn get_index(
+    fn get_index_file(
         &self,
         headers: &axum::http::HeaderMap,
         index_path: &str,
@@ -189,7 +197,7 @@ impl RegistryStorage for S3RegistoryStorage {
         )
     }
 
-    fn get_crate(
+    fn get_crate_file(
         &self,
         headers: &axum::http::HeaderMap,
         crate_name: &str,
@@ -200,5 +208,45 @@ impl RegistryStorage for S3RegistoryStorage {
             self.config.crate_bucket.clone(),
             format!("{}{crate_name}/{version}", self.config.crate_prefix),
         )
+    }
+
+    #[cfg(feature = "api")]
+    fn get_index_data(
+        &self,
+        crate_name: &str,
+    ) -> impl futures_util::TryStream<Ok = crate::index::IndexData, Error = RegistryStorageError> + Send
+    where
+        Self: Sized,
+    {
+        futures_util::stream::once(async {
+            Ok(LinesStream::new(
+                self.client
+                    .get_object()
+                    .bucket(&self.config.index_bucket)
+                    .key(self.crate_name_to_index_key(crate_name))
+                    .send()
+                    .await
+                    .map_err(RegistryStorageError::new)?
+                    .body
+                    .into_async_read()
+                    .lines(),
+            )
+            .map_err(RegistryStorageError::new))
+        })
+        .try_flatten()
+        .and_then(|line: String| {
+            ready(serde_json::from_str(&line).map_err(RegistryStorageError::new))
+        })
+    }
+}
+
+impl RegistryStorageError {
+    pub fn from_s3_error(error: aws_sdk_s3::Error) -> Self {
+        match error {
+            aws_sdk_s3::Error::NoSuchKey(_) | aws_sdk_s3::Error::NotFound(_) => {
+                RegistryStorageError::NotFound
+            }
+            e => RegistryStorageError::new(e),
+        }
     }
 }

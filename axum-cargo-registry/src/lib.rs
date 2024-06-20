@@ -6,6 +6,9 @@ use axum::{
 use registory_storage::RegistryStorage;
 use std::sync::Arc;
 
+#[cfg(feature = "api")]
+pub mod api;
+mod crate_utils;
 pub mod crates;
 pub mod header_util;
 pub mod index;
