@@ -1,15 +1,14 @@
-use axum::{body::Bytes, extract::State, http::StatusCode};
+use crate::{
+    crate_utils::crate_name_to_index,
+    index::IndexData,
+    registory_storage::{RegistryError, RegistryStorage},
+    App,
+};
+use axum::{body::Bytes, extract::State, http::StatusCode, Json};
 use futures_util::stream::TryStreamExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, sync::Arc};
-
-use crate::{
-    crate_utils::crate_name_to_index,
-    index::IndexData,
-    registory_storage::{RegistryStorageError, WritableRegistryStorage},
-    App,
-};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ErrorResponseInner {
@@ -117,18 +116,23 @@ pub struct Warnings {
     pub other: Vec<String>,
 }
 
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct PublishResponse {
     pub warnings: Warnings,
 }
 
-impl<RS: WritableRegistryStorage> App<RS> {
+impl<RS: RegistryStorage> App<RS> {
+    pub fn api_nest() -> axum::Router<Arc<Self>> {
+        axum::Router::new().route("/publish", axum::routing::post(Self::publish))
+    }
+
     pub async fn publish(
         State(state): State<Arc<Self>>,
         data: Bytes,
-    ) -> Result<PublishResponse, (StatusCode, axum::Error)> {
+    ) -> Result<Json<PublishResponse>, (StatusCode, RegistryError)> {
         let (pacakge, dot_crate) = parse_publish_data(&data).map_err(|e| {
             tracing::trace!("Failed to parse publish data: {:?}", e);
-            (StatusCode::BAD_REQUEST, axum::Error::new(e))
+            (StatusCode::BAD_REQUEST, RegistryError::new(e))
         })?;
 
         let prev_index_array = state.get_index_data(&pacakge).await?;
@@ -147,24 +151,24 @@ impl<RS: WritableRegistryStorage> App<RS> {
             .await
             .map_err(|e| {
                 tracing::trace!("Failed to put index: {:?}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, axum::Error::new(e))
+                (StatusCode::INTERNAL_SERVER_ERROR, e)
             })?;
 
         state
             .registory_storage
             .put_crate(&crate_name, &version, dot_crate)
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, axum::Error::new(e)))?;
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
-        Ok(PublishResponse {
+        Ok(Json(PublishResponse {
             warnings: Warnings::default(),
-        })
+        }))
     }
 
     async fn get_index_data(
         self: &Arc<Self>,
         pacakge: &Package,
-    ) -> Result<Vec<IndexData>, (StatusCode, axum::Error)> {
+    ) -> Result<Vec<IndexData>, (StatusCode, RegistryError)> {
         let res = self
             .registory_storage
             .get_index_data(&pacakge.name)
@@ -173,19 +177,13 @@ impl<RS: WritableRegistryStorage> App<RS> {
         match res {
             Ok(vec) => {
                 if vec.iter().any(|index| index.vers == pacakge.vers) {
-                    Err((
-                        StatusCode::CONFLICT,
-                        axum::Error::new("Version already exists"),
-                    ))
+                    Err((StatusCode::CONFLICT, RegistryError::Duplicate))
                 } else {
                     Ok(vec)
                 }
             }
-            Err(RegistryStorageError::NotFound) => Ok(Vec::new()),
-            Err(RegistryStorageError::Other(e)) => Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Error::new(e.to_string()),
-            )),
+            Err(RegistryError::NotFound) => Ok(Vec::new()),
+            Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
         }
     }
 }

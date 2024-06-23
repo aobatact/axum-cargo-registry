@@ -13,13 +13,23 @@ pub struct IndexConfig<RS> {
     app: Arc<App<RS>>,
 }
 
+impl<RS> IndexConfig<RS> {
+    pub fn has_api(&self) -> bool {
+        self.app.has_api()
+    }
+}
+
 impl<RS> Serialize for IndexConfig<RS> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        let mut config = serializer.serialize_struct("IndexConfig", 1)?;
+        let mut config =
+            serializer.serialize_struct("IndexConfig", 1 + if self.has_api() { 1 } else { 0 })?;
         config.serialize_field("dl", &self.app.dl_name())?;
+        if self.has_api() {
+            config.serialize_field("api", &format!("{}/api", self.app.domain()))?;
+        }
         config.end()
     }
 }

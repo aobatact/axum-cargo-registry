@@ -1,7 +1,7 @@
 //! S3 storage backend for the registry.
 
+use super::RegistryError;
 use super::RegistryStorage;
-use super::RegistryStorageError;
 use crate::{crate_utils::crate_name_to_index, header_util::get_if_none_match};
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{error::SdkError, presigning::PresigningConfig};
@@ -214,7 +214,7 @@ impl RegistryStorage for S3RegistoryStorage {
     fn get_index_data(
         &self,
         crate_name: &str,
-    ) -> impl futures_util::TryStream<Ok = crate::index::IndexData, Error = RegistryStorageError> + Send
+    ) -> impl futures_util::TryStream<Ok = crate::index::IndexData, Error = RegistryError> + Send
     where
         Self: Sized,
     {
@@ -226,27 +226,70 @@ impl RegistryStorage for S3RegistoryStorage {
                     .key(self.crate_name_to_index_key(crate_name))
                     .send()
                     .await
-                    .map_err(RegistryStorageError::new)?
+                    .map_err(RegistryError::new)?
                     .body
                     .into_async_read()
                     .lines(),
             )
-            .map_err(RegistryStorageError::new))
+            .map_err(RegistryError::new))
         })
         .try_flatten()
         .and_then(|line: String| {
-            ready(serde_json::from_str(&line).map_err(RegistryStorageError::new))
+            ready(serde_json::from_str(&line).map_err(RegistryError::SerDeOther))
         })
+    }
+
+    #[cfg(feature = "api")]
+    async fn put_index(
+        &self,
+        index_path: &str,
+        data: crate::index::IndexData,
+        prev_data: Vec<crate::index::IndexData>,
+    ) -> Result<(), RegistryError> {
+        let mut vec = Vec::new();
+        for line in prev_data.into_iter().chain(Some(data)) {
+            vec.extend(serde_json::to_vec(&line).map_err(RegistryError::SerDeOther)?);
+        }
+        self.client
+            .put_object()
+            .bucket(&self.config.index_bucket)
+            .key(format!("{}{}", self.config.index_prefix, index_path))
+            .body(vec.into())
+            .send()
+            .await
+            .map_err(RegistryError::new)?;
+        Ok(())
+    }
+
+    #[cfg(feature = "api")]
+    async fn put_crate(
+        &self,
+        crate_name: &str,
+        version: &str,
+        data: &[u8],
+    ) -> Result<(), RegistryError> {
+        self.client
+            .put_object()
+            .bucket(&self.config.crate_bucket)
+            .key(format!(
+                "{}{}/{}",
+                self.config.crate_prefix, crate_name, version
+            ))
+            .body(data.to_vec().into())
+            .send()
+            .await
+            .map_err(RegistryError::new)?;
+        Ok(())
     }
 }
 
-impl RegistryStorageError {
+impl RegistryError {
     pub fn from_s3_error(error: aws_sdk_s3::Error) -> Self {
         match error {
             aws_sdk_s3::Error::NoSuchKey(_) | aws_sdk_s3::Error::NotFound(_) => {
-                RegistryStorageError::NotFound
+                RegistryError::NotFound
             }
-            e => RegistryStorageError::new(e),
+            e => RegistryError::new(e),
         }
     }
 }

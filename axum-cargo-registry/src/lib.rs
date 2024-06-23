@@ -43,6 +43,12 @@ impl<RS> App<RS> {
     }
 }
 
+impl<RS> App<RS> {
+    pub fn has_api(&self) -> bool {
+        cfg!(feature = "api")
+    }
+}
+
 impl<RS> App<RS>
 where
     RS: RegistryStorage,
@@ -51,7 +57,7 @@ where
     pub fn create_router(self) -> Router {
         tracing::debug!("Creating router");
 
-        Router::new()
+        let mut router = Router::new()
             .nest(
                 "/index",
                 Router::new()
@@ -61,9 +67,12 @@ where
             .route(
                 "/crates/:crate_name/:version/download",
                 get(Self::get_crate),
-            )
-            .fallback(fallback)
-            .with_state(Arc::new(self))
+            );
+        #[cfg(feature = "api")]
+        {
+            router = router.nest("/api", Self::api_nest());
+        };
+        router.fallback(fallback).with_state(Arc::new(self))
     }
 }
 

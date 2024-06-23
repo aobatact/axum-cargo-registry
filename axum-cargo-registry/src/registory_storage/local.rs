@@ -1,6 +1,6 @@
 //! Local storage backend for the registry.
 
-use super::{RegistryStorage, RegistryStorageError, WritableRegistryStorage};
+use super::{RegistryError, RegistryStorage};
 use crate::{
     crate_utils::crate_name_to_index,
     header_util::{self, get_modified_since},
@@ -69,26 +69,6 @@ impl LocalStorage {
         )
             .into_response()
     }
-
-    async fn create_new_local_file(path: PathBuf, data: &[u8]) -> Result<(), axum::Error> {
-        let mut file = match std::fs::File::options()
-            .read(true)
-            .write(true)
-            .create_new(true)
-            .open(&path)
-        {
-            Ok(f) => f,
-            Err(e) => {
-                tracing::error!(?e, path = %path.display(), "Failed to open file");
-                return Err(axum::Error::new(e));
-            }
-        };
-        if let Err(e) = file.write_all(data) {
-            tracing::error!(?e, path = %path.display(), "Failed to write to file");
-            return Err(axum::Error::new(e));
-        }
-        Ok(())
-    }
 }
 
 impl RegistryStorage for LocalStorage {
@@ -117,46 +97,73 @@ impl RegistryStorage for LocalStorage {
     fn get_index_data(
         &self,
         crate_name: &str,
-    ) -> impl futures_util::TryStream<Ok = crate::index::IndexData, Error = RegistryStorageError> + Send
+    ) -> impl futures_util::TryStream<Ok = crate::index::IndexData, Error = RegistryError> + Send
     where
         Self: Sized,
     {
         match std::fs::read(crate_name_to_index(crate_name)) {
             Ok(data) => {
                 let items = Cursor::new(data).lines().map(|line| {
-                    line.map_err(RegistryStorageError::new)
-                        .and_then(|s| serde_json::from_str(&s).map_err(RegistryStorageError::new))
+                    line.map_err(RegistryError::new)
+                        .and_then(|s| serde_json::from_str(&s).map_err(RegistryError::new))
                 });
                 futures_util::stream::iter(items).left_stream()
             }
-            Err(e) => futures_util::stream::once(async { Err(RegistryStorageError::new(e)) })
-                .right_stream(),
+            Err(e) => {
+                futures_util::stream::once(async { Err(RegistryError::new(e)) }).right_stream()
+            }
         }
     }
-}
 
-#[cfg(feature = "api")]
-impl WritableRegistryStorage for LocalStorage {
+    #[cfg(feature = "api")]
     async fn put_index(
         &self,
         index_path: &str,
         data: crate::index::IndexData,
-        prev_data: Vec<crate::index::IndexData>,
-    ) -> Result<(), axum::Error> {
-        todo!()
+        mut prev_data: Vec<crate::index::IndexData>,
+    ) -> Result<(), RegistryError> {
+        let path = self.index_path.join(index_path);
+        let mut file = match std::fs::File::options().write(true).open(&path) {
+            Ok(f) => f,
+            Err(e) => {
+                tracing::error!(?e, path = %path.display(), "Failed to open file");
+                return Err(RegistryError::new(e));
+            }
+        };
+        prev_data.push(data);
+        for prev in prev_data {
+            file.write_all(&serde_json::to_vec(&prev).unwrap())
+                .map_err(RegistryError::new)?;
+        }
+        Ok(())
     }
 
+    #[cfg(feature = "api")]
     async fn put_crate(
         &self,
         crate_name: &str,
         version: &str,
         data: &[u8],
-    ) -> Result<(), axum::Error> {
-        Self::create_new_local_file(
-            self.crate_path
-                .join(format!("{crate_name}/{version}.crate")),
-            data,
-        )
-        .await
+    ) -> Result<(), RegistryError> {
+        let path = self
+            .crate_path
+            .join(format!("{crate_name}/{version}.crate"));
+        let mut file = match std::fs::File::options()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(f) => f,
+            Err(e) => {
+                tracing::error!(?e, path = %path.display(), "Failed to open file");
+                return Err(RegistryError::new(e));
+            }
+        };
+        if let Err(e) = file.write_all(data) {
+            tracing::error!(?e, path = %path.display(), "Failed to write to file");
+            return Err(RegistryError::new(e));
+        }
+        Ok(())
     }
 }

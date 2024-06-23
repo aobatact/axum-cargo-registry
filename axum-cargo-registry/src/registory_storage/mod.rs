@@ -14,13 +14,6 @@ pub mod s3;
 
 /// Trait that defines the interface for the storage backend
 pub trait RegistryStorage: Send + Sync + 'static {
-    #[cfg(feature = "api")]
-    fn get_index_data(
-        &self,
-        crate_name: &str,
-    ) -> impl futures_util::TryStream<Ok = IndexData, Error = RegistryStorageError> + Send
-    where
-        Self: Sized;
     /// Get the index file
     fn get_index_file(
         &self,
@@ -34,48 +27,63 @@ pub trait RegistryStorage: Send + Sync + 'static {
         crate_name: &str,
         version: &str,
     ) -> impl Future<Output = impl IntoResponse> + Send;
-}
 
-#[cfg(feature = "api")]
-pub trait WritableRegistryStorage: RegistryStorage {
+    #[cfg(feature = "api")]
+    /// Get the index data for the given crate.
+    fn get_index_data(
+        &self,
+        crate_name: &str,
+    ) -> impl futures_util::TryStream<Ok = IndexData, Error = RegistryError> + Send
+    where
+        Self: Sized;
+    #[cfg(feature = "api")]
     /// Put the index file
     fn put_index(
         &self,
         index_path: &str,
         data: IndexData,
         prev_data: Vec<IndexData>,
-    ) -> impl Future<Output = Result<(), axum::Error>> + Send;
+    ) -> impl Future<Output = Result<(), RegistryError>> + Send;
 
+    #[cfg(feature = "api")]
     /// Put a crate file
     fn put_crate(
         &self,
         crate_name: &str,
         version: &str,
         data: &[u8],
-    ) -> impl Future<Output = Result<(), axum::Error>> + Send;
+    ) -> impl Future<Output = Result<(), RegistryError>> + Send;
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum RegistryStorageError {
+pub enum RegistryError {
     #[error("Not Found")]
     NotFound,
+    #[error("Duplicate")]
+    Duplicate,
+    #[error("Reqwest Deserialize error {0}")]
+    ReqwestDe(serde_json::Error),
+    #[error("Serde error {0}")]
+    SerDeOther(serde_json::Error),
     #[error(transparent)]
     Other(Box<dyn std::error::Error + Send + Sync>),
 }
 
-impl RegistryStorageError {
+impl RegistryError {
     pub fn new<E: Into<Box<dyn std::error::Error + Send + Sync>>>(e: E) -> Self {
-        RegistryStorageError::Other(e.into())
+        RegistryError::Other(e.into())
     }
 }
 
-impl IntoResponse for RegistryStorageError {
+impl IntoResponse for RegistryError {
     fn into_response(self) -> axum::response::Response {
         match self {
-            RegistryStorageError::NotFound => StatusCode::NOT_FOUND.into_response(),
-            RegistryStorageError::Other(e) => {
-                tracing::error!("{:?}", e);
-                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            RegistryError::NotFound => StatusCode::NOT_FOUND.into_response(),
+            RegistryError::ReqwestDe(_) => StatusCode::BAD_REQUEST.into_response(),
+            RegistryError::Duplicate => StatusCode::CONFLICT.into_response(),
+            e => {
+                tracing::debug!("{e:?}");
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
             }
         }
     }
