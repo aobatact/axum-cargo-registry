@@ -10,9 +10,8 @@ use axum::{
     http::StatusCode,
     response::{AppendHeaders, IntoResponse, Response},
 };
-use futures_util::StreamExt;
 use std::{
-    io::{BufRead, Cursor, Read, Write},
+    io::{BufRead, Read, Write},
     path::PathBuf,
     time::SystemTime,
 };
@@ -94,24 +93,34 @@ impl RegistryStorage for LocalStorage {
     }
 
     #[cfg(feature = "api")]
-    fn get_index_data(
+    async fn get_index_data(
         &self,
         crate_name: &str,
-    ) -> impl futures_util::TryStream<Ok = crate::index::IndexData, Error = RegistryError> + Send
+    ) -> Result<Option<Vec<crate::index::IndexData>>, RegistryError>
     where
         Self: Sized,
     {
-        match std::fs::read(crate_name_to_index(crate_name)) {
+        let path = crate_name_to_index(crate_name);
+        tracing::trace!(crate_name, path, "Getting index data");
+        match std::fs::read(self.index_path.join(path)) {
             Ok(data) => {
-                let items = Cursor::new(data).lines().map(|line| {
-                    line.map_err(RegistryError::new)
-                        .and_then(|s| serde_json::from_str(&s).map_err(RegistryError::new))
-                });
-                futures_util::stream::iter(items).left_stream()
+                let items = data
+                    .lines()
+                    .map(|line| {
+                        tracing::trace!(line = ?line, "Parsing line");
+                        line.map_err(RegistryError::new)
+                            .map(|s| serde_json::from_str(&s).unwrap())
+                            // .and_then(|s| serde_json::from_str(&s).map_err(RegistryError::new))
+                            .and_then(|s| {
+                                tracing::trace!(s = ?s, "Parsed line");
+                                serde_json::from_value(s).map_err(RegistryError::new)
+                            })
+                    })
+                    .collect();
+                Some(items).transpose()
             }
-            Err(e) => {
-                futures_util::stream::once(async { Err(RegistryError::new(e)) }).right_stream()
-            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(RegistryError::new(e)),
         }
     }
 
@@ -122,19 +131,30 @@ impl RegistryStorage for LocalStorage {
         data: crate::index::IndexData,
         mut prev_data: Vec<crate::index::IndexData>,
     ) -> Result<(), RegistryError> {
-        let path = self.index_path.join(index_path);
-        let mut file = match std::fs::File::options().write(true).open(&path) {
+        let path: PathBuf = self.index_path.join(index_path);
+        let dir = path
+            .parent()
+            .ok_or_else(|| RegistryError::new("Invalid path"))?;
+        tracing::trace!(dir = ?std::path::absolute(dir), "Creating directory");
+        std::fs::create_dir_all(dir).map_err(RegistryError::new)?;
+        let mut file = match std::fs::File::options()
+            .write(true)
+            .append(true)
+            .create(true)
+            .open(&path)
+        {
             Ok(f) => f,
             Err(e) => {
                 tracing::error!(?e, path = %path.display(), "Failed to open file");
                 return Err(RegistryError::new(e));
             }
         };
-        prev_data.push(data);
-        for prev in prev_data {
-            file.write_all(&serde_json::to_vec(&prev).unwrap())
-                .map_err(RegistryError::new)?;
-        }
+        // prev_data.push(data);
+        // for prev in prev_data {
+        file.write_all(&serde_json::to_vec(&data).unwrap())
+            .map_err(RegistryError::new)?;
+        file.write_all(b"\n").map_err(RegistryError::new)?;
+
         Ok(())
     }
 
@@ -148,6 +168,10 @@ impl RegistryStorage for LocalStorage {
         let path = self
             .crate_path
             .join(format!("{crate_name}/{version}.crate"));
+        let dir = path
+            .parent()
+            .ok_or_else(|| RegistryError::new("Invalid path"))?;
+        std::fs::create_dir_all(dir).map_err(RegistryError::new)?;
         let mut file = match std::fs::File::options()
             .read(true)
             .write(true)

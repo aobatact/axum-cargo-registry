@@ -28,7 +28,7 @@ impl<RS> Serialize for IndexConfig<RS> {
             serializer.serialize_struct("IndexConfig", 1 + if self.has_api() { 1 } else { 0 })?;
         config.serialize_field("dl", &self.app.dl_name())?;
         if self.has_api() {
-            config.serialize_field("api", &format!("{}/api", self.app.domain()))?;
+            config.serialize_field("api", self.app.domain())?;
         }
         config.end()
     }

@@ -9,10 +9,8 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{AppendHeaders, IntoResponse, Redirect, Response},
 };
-use futures_util::TryStreamExt;
-use std::{future::ready, time::Duration};
+use std::time::Duration;
 use tokio::io::AsyncBufReadExt;
-use tokio_stream::wrappers::LinesStream;
 
 /// S3 storage backend
 #[derive(Debug)]
@@ -211,32 +209,38 @@ impl RegistryStorage for S3RegistoryStorage {
     }
 
     #[cfg(feature = "api")]
-    fn get_index_data(
+    async fn get_index_data(
         &self,
         crate_name: &str,
-    ) -> impl futures_util::TryStream<Ok = crate::index::IndexData, Error = RegistryError> + Send
+    ) -> Result<Option<Vec<crate::index::IndexData>>, RegistryError>
     where
         Self: Sized,
     {
-        futures_util::stream::once(async {
-            Ok(LinesStream::new(
-                self.client
-                    .get_object()
-                    .bucket(&self.config.index_bucket)
-                    .key(self.crate_name_to_index_key(crate_name))
-                    .send()
-                    .await
-                    .map_err(RegistryError::new)?
-                    .body
-                    .into_async_read()
-                    .lines(),
-            )
-            .map_err(RegistryError::new))
-        })
-        .try_flatten()
-        .and_then(|line: String| {
-            ready(serde_json::from_str(&line).map_err(RegistryError::SerDeOther))
-        })
+        let obj_res = self
+            .client
+            .get_object()
+            .bucket(&self.config.index_bucket)
+            .key(self.crate_name_to_index_key(crate_name))
+            .send()
+            .await;
+        let obj = match obj_res {
+            Ok(obj) => obj,
+            Err(ref e)
+                if e.as_service_error()
+                    .filter(|se| se.is_no_such_key())
+                    .is_some() =>
+            {
+                return Ok(None)
+            }
+            Err(e) => return Err(RegistryError::from_s3_error(e.into())),
+        };
+        let mut index_list = vec![];
+        let mut body = obj.body.into_async_read().lines();
+        while let Some(line) = body.next_line().await.map_err(RegistryError::new)? {
+            let data = serde_json::from_str(&line).map_err(RegistryError::SerDeOther)?;
+            index_list.push(data);
+        }
+        Ok(Some(index_list))
     }
 
     #[cfg(feature = "api")]

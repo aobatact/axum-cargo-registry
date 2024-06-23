@@ -15,14 +15,13 @@ aws-sdk-s3 = {version = "1.33.0", optional = true }
 tracing = { version = "0.1" }
 thiserror = "1.0.59"
 time = { version = "0.3.36", optional = true }
-futures-util = { version = "0.3.30"}
 tokio = { version = "1", optional = true, default-features = false }
 tokio-stream = {version = "0.1.15",optional = true, default-features = false, features = ["io-util"]}
 sha2 = { version = "0.10.8", optional = true}
 
 [features]
 default = ["storage-s3", "storage-local", "parse-time", "api"]
-storage-s3 = ["dep:aws-config", "dep:aws-sdk-s3", "dep:tokio", "tokio/io-util", "dep:tokio-stream"]
+storage-s3 = ["dep:aws-config", "dep:aws-sdk-s3", "dep:tokio", "tokio/io-util"]
 storage-local = []
 parse-time = ["dep:time", "time/formatting", "time/parsing"] 
 api = ["serde/derive", "dep:sha2"]

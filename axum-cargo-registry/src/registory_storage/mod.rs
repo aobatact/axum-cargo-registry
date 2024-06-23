@@ -33,7 +33,7 @@ pub trait RegistryStorage: Send + Sync + 'static {
     fn get_index_data(
         &self,
         crate_name: &str,
-    ) -> impl futures_util::TryStream<Ok = IndexData, Error = RegistryError> + Send
+    ) -> impl Future<Output = Result<Option<Vec<IndexData>>, RegistryError>> + Send
     where
         Self: Sized;
     #[cfg(feature = "api")]
