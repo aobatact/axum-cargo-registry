@@ -129,16 +129,14 @@ impl RegistryStorage for LocalStorage {
         &self,
         index_path: &str,
         data: crate::index::IndexData,
-        mut prev_data: Vec<crate::index::IndexData>,
+        _prev_data: Vec<crate::index::IndexData>,
     ) -> Result<(), RegistryError> {
         let path: PathBuf = self.index_path.join(index_path);
         let dir = path
             .parent()
             .ok_or_else(|| RegistryError::new("Invalid path"))?;
-        tracing::trace!(dir = ?std::path::absolute(dir), "Creating directory");
         std::fs::create_dir_all(dir).map_err(RegistryError::new)?;
         let mut file = match std::fs::File::options()
-            .write(true)
             .append(true)
             .create(true)
             .open(&path)
