@@ -140,7 +140,7 @@ impl<RS: RegistryStorage> App<RS> {
         tracing::trace!(crate_name = %crate_name, version = %version, "Save to index");
         state
             .registory_storage
-            .put_index(&crate_name_to_index(&crate_name), index, prev_index_array)
+            .post_index(&crate_name_to_index(&crate_name), index, prev_index_array)
             .await
             .map_err(|e| {
                 tracing::trace!("Failed to put index: {:?}", e);

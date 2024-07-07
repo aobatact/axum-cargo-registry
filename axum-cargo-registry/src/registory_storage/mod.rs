@@ -38,11 +38,22 @@ pub trait RegistryStorage: Send + Sync + 'static {
         Self: Sized;
     #[cfg(feature = "api")]
     /// Put the index file
-    fn put_index(
+    fn post_index(
         &self,
         index_path: &str,
         data: IndexData,
-        prev_data: Vec<IndexData>,
+        mut prev_data: Vec<IndexData>,
+    ) -> impl Future<Output = Result<(), RegistryError>> + Send {
+        prev_data.push(data);
+        self.put_all_index(index_path, prev_data)
+    }
+
+    #[cfg(feature = "api")]
+    /// Put the index file
+    fn put_all_index(
+        &self,
+        index_path: &str,
+        data: Vec<IndexData>,
     ) -> impl Future<Output = Result<(), RegistryError>> + Send;
 
     #[cfg(feature = "api")]

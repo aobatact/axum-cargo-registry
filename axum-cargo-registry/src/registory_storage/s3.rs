@@ -244,14 +244,13 @@ impl RegistryStorage for S3RegistoryStorage {
     }
 
     #[cfg(feature = "api")]
-    async fn put_index(
+    async fn put_all_index(
         &self,
         index_path: &str,
-        data: crate::index::IndexData,
-        prev_data: Vec<crate::index::IndexData>,
+        data: Vec<crate::index::IndexData>,
     ) -> Result<(), RegistryError> {
         let mut vec = Vec::new();
-        for line in prev_data.into_iter().chain(Some(data)) {
+        for line in data {
             vec.extend(serde_json::to_vec(&line).map_err(RegistryError::SerDeOther)?);
         }
         self.client

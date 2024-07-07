@@ -125,7 +125,7 @@ impl RegistryStorage for LocalStorage {
     }
 
     #[cfg(feature = "api")]
-    async fn put_index(
+    async fn post_index(
         &self,
         index_path: &str,
         data: crate::index::IndexData,
@@ -147,11 +147,41 @@ impl RegistryStorage for LocalStorage {
                 return Err(RegistryError::new(e));
             }
         };
-        // prev_data.push(data);
-        // for prev in prev_data {
         file.write_all(&serde_json::to_vec(&data).unwrap())
             .map_err(RegistryError::new)?;
         file.write_all(b"\n").map_err(RegistryError::new)?;
+
+        Ok(())
+    }
+
+    #[cfg(feature = "api")]
+    async fn put_all_index(
+        &self,
+        index_path: &str,
+        data: Vec<crate::index::IndexData>,
+    ) -> Result<(), RegistryError> {
+        let path: PathBuf = self.index_path.join(index_path);
+        let dir = path
+            .parent()
+            .ok_or_else(|| RegistryError::new("Invalid path"))?;
+        std::fs::create_dir_all(dir).map_err(RegistryError::new)?;
+        let mut file = match std::fs::File::options()
+            .create(true)
+            .write(true)
+            .open(&path)
+        {
+            Ok(f) => f,
+            Err(e) => {
+                tracing::error!(?e, path = %path.display(), "Failed to open file");
+                return Err(RegistryError::new(e));
+            }
+        };
+        // prev_data.push(data);
+        for index in data {
+            file.write_all(&serde_json::to_vec(&index).unwrap())
+                .map_err(RegistryError::new)?;
+            file.write_all(b"\n").map_err(RegistryError::new)?;
+        }
 
         Ok(())
     }

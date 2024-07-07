@@ -6,6 +6,9 @@ use axum::{http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+pub mod publish;
+pub mod yank;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ErrorResponseInner {
     pub detail: String,
@@ -16,6 +19,25 @@ pub struct ErrorResponse {
     #[serde(skip)]
     pub status_code: StatusCode,
     pub errors: Vec<ErrorResponseInner>,
+}
+
+impl ErrorResponse {
+    pub fn crate_not_found() -> Self {
+        Self {
+            status_code: StatusCode::NOT_FOUND,
+            errors: vec![ErrorResponseInner {
+                detail: "Crate not found".into(),
+            }],
+        }
+    }
+    pub fn version_not_found() -> Self {
+        Self {
+            status_code: StatusCode::NOT_FOUND,
+            errors: vec![ErrorResponseInner {
+                detail: "Version not found".into(),
+            }],
+        }
+    }
 }
 
 impl From<(StatusCode, RegistryError)> for ErrorResponse {
@@ -33,14 +55,24 @@ impl From<(StatusCode, RegistryError)> for ErrorResponse {
         }
     }
 }
+impl From<RegistryError> for ErrorResponse {
+    fn from(err: RegistryError) -> Self {
+        let code = match &err {
+            RegistryError::NotFound => StatusCode::NOT_FOUND,
+            RegistryError::Duplicate => StatusCode::CONFLICT,
+            RegistryError::ReqwestDe(_) => StatusCode::BAD_REQUEST,
+            RegistryError::SerDeOther(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            RegistryError::Other(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        (code, err).into()
+    }
+}
 
 impl IntoResponse for ErrorResponse {
     fn into_response(self) -> axum::response::Response {
         (self.status_code, axum::Json(self)).into_response()
     }
 }
-
-pub mod publish;
 
 impl<RS: RegistryStorage> App<RS> {
     pub fn api_nest() -> axum::Router<Arc<Self>> {
