@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 pub mod publish;
+pub mod search;
 pub mod yank;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -62,6 +63,7 @@ impl From<RegistryError> for ErrorResponse {
             RegistryError::Duplicate => StatusCode::CONFLICT,
             RegistryError::ReqwestDe(_) => StatusCode::BAD_REQUEST,
             RegistryError::SerDeOther(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            RegistryError::NotSupported => StatusCode::NOT_IMPLEMENTED,
             RegistryError::Other(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
         (code, err).into()

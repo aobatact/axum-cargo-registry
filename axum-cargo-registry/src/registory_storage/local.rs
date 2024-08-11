@@ -218,4 +218,40 @@ impl RegistryStorage for LocalStorage {
         }
         Ok(())
     }
+
+    #[cfg(feature = "api")]
+    async fn list_crate(
+        &self,
+        query: &str,
+        page_size: usize,
+        page: usize,
+    ) -> Result<crate::api::search::SearchResponse, RegistryError> {
+        let values = std::fs::read_dir(&self.crate_path)
+            .map_err(RegistryError::new)?
+            .filter_map(|entry| {
+                let entry = entry.map_err(RegistryError::new).ok()?;
+                let path = entry.path();
+                let name = path.file_name()?.to_str()?;
+                if name.contains(query) {
+                    Some(crate::crates::CrateInfo {
+                        name: name.to_string(),
+                        description: "TODO".to_string(),
+                        max_version: "0.1.0".to_string(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        Ok(crate::api::search::SearchResponse {
+            meta: crate::api::search::MetaInfo {
+                total: values.len(),
+            },
+            crates: values
+                .into_iter()
+                .skip(page_size * (page - 1))
+                .take(page_size)
+                .collect(),
+        })
+    }
 }

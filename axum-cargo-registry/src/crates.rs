@@ -4,6 +4,7 @@ use axum::{
     http::HeaderMap,
     response::{IntoResponse, Response},
 };
+use serde::Serialize;
 use std::sync::Arc;
 
 impl<RS> App<RS>
@@ -23,4 +24,11 @@ where
             .await
             .into_response()
     }
+}
+
+#[derive(Debug, Serialize)]
+pub struct CrateInfo {
+    pub name: String,
+    pub max_version: String,
+    pub description: String,
 }

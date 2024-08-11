@@ -284,6 +284,36 @@ impl RegistryStorage for S3RegistoryStorage {
             .map_err(RegistryError::new)?;
         Ok(())
     }
+
+    #[cfg(feature = "api")]
+    async fn list_crate(
+        &self,
+        query: &str,
+        page_size: usize,
+        page: usize,
+    ) -> Result<crate::api::search::SearchResponse, RegistryError> {
+        Err(RegistryError::NotSupported)
+        // self.client
+        //     .list_objects_v2()
+        //     .bucket(&self.config.crate_bucket)
+        //     .prefix(&self.config.crate_prefix)
+        //     .max_keys(page_size as i32)
+        //     .start_after(format!(
+        //         "{}{}",
+        //         self.config.crate_prefix,
+        //         crate_name_to_index(query)
+        //     ))
+        //     .send()
+        //     .await
+        //     .map_err(RegistryError::new)?
+        //     .contents
+        //     .unwrap_or_default()
+        //     .into_iter()
+        //     .map(|content| crate::crates::CrateInfo {
+        //         name: content.key.unwrap_or_default(),
+        //     })
+        //     .collect()
+    }
 }
 
 impl RegistryError {

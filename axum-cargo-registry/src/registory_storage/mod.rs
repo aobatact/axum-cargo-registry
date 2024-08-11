@@ -36,6 +36,7 @@ pub trait RegistryStorage: Send + Sync + 'static {
     ) -> impl Future<Output = Result<Option<Vec<IndexData>>, RegistryError>> + Send
     where
         Self: Sized;
+
     #[cfg(feature = "api")]
     /// Put the index file
     fn post_index(
@@ -64,6 +65,14 @@ pub trait RegistryStorage: Send + Sync + 'static {
         version: &str,
         data: &[u8],
     ) -> impl Future<Output = Result<(), RegistryError>> + Send;
+
+    #[cfg(feature = "api")]
+    fn list_crate(
+        &self,
+        query: &str,
+        page_size: usize,
+        page: usize,
+    ) -> impl Future<Output = Result<crate::api::search::SearchResponse, RegistryError>>;
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -76,6 +85,8 @@ pub enum RegistryError {
     ReqwestDe(serde_json::Error),
     #[error("Serde error {0}")]
     SerDeOther(serde_json::Error),
+    #[error("Not Supported")]
+    NotSupported,
     #[error(transparent)]
     Other(Box<dyn std::error::Error + Send + Sync>),
 }
@@ -92,6 +103,7 @@ impl IntoResponse for RegistryError {
             RegistryError::NotFound => StatusCode::NOT_FOUND.into_response(),
             RegistryError::ReqwestDe(_) => StatusCode::BAD_REQUEST.into_response(),
             RegistryError::Duplicate => StatusCode::CONFLICT.into_response(),
+            RegistryError::NotSupported => StatusCode::NOT_IMPLEMENTED.into_response(),
             e => {
                 tracing::debug!("{e:?}");
                 (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
