@@ -167,6 +167,7 @@ impl RegistryStorage for LocalStorage {
         std::fs::create_dir_all(dir).map_err(RegistryError::new)?;
         let mut file = match std::fs::File::options()
             .create(true)
+            .truncate(true)
             .write(true)
             .open(&path)
         {
