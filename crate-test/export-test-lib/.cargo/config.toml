@@ -1,0 +1,2 @@
+[registries]
+test-local-registry = { index = "sparse+http://localhost:3000/index/" }

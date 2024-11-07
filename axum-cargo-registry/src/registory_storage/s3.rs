@@ -1,7 +1,8 @@
 //! S3 storage backend for the registry.
 
+use super::RegistryError;
 use super::RegistryStorage;
-use crate::header_util::get_if_none_match;
+use crate::{crate_utils::crate_name_to_index, header_util::get_if_none_match};
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{error::SdkError, presigning::PresigningConfig};
 use axum::{
@@ -9,6 +10,7 @@ use axum::{
     response::{AppendHeaders, IntoResponse, Redirect, Response},
 };
 use std::time::Duration;
+use tokio::io::AsyncBufReadExt;
 
 /// S3 storage backend
 #[derive(Debug)]
@@ -37,15 +39,11 @@ impl StorageConfig {
         mut crate_prefix: String,
         presigned_expire: Duration,
     ) -> Self {
-        if !index_prefix.ends_with('/') {
-            if !index_prefix.is_empty() {
-                index_prefix.push('/')
-            }
+        if !index_prefix.ends_with('/') && !index_prefix.is_empty() {
+            index_prefix.push('/')
         }
-        if !crate_prefix.ends_with('/') {
-            if !crate_prefix.is_empty() {
-                crate_prefix.push('/')
-            }
+        if !crate_prefix.ends_with('/') && !crate_prefix.is_empty() {
+            crate_prefix.push('/')
         }
 
         Self {
@@ -118,6 +116,14 @@ impl S3RegistoryStorage {
             .unwrap()
     }
 
+    pub fn crate_name_to_index_key(&self, crate_name: &str) -> String {
+        format!(
+            "{}{}",
+            self.config.index_prefix,
+            crate_name_to_index(crate_name)
+        )
+    }
+
     /// Create a presigned request for S3
     pub async fn create_get_presigned_request(
         &self,
@@ -132,14 +138,14 @@ impl S3RegistoryStorage {
             .get_object()
             .bucket(bucket_name)
             .key(object_key)
-            .set_if_none_match(get_if_none_match(&headers))
+            .set_if_none_match(get_if_none_match(headers))
             .presigned(self.presigned_config())
             .await;
         match result {
             Ok(out) => {
                 let uri = out.uri();
                 tracing::trace!(uri, "presigned");
-                ((AppendHeaders(out.headers()), Redirect::temporary(uri))).into_response()
+                (AppendHeaders(out.headers()), Redirect::temporary(uri)).into_response()
             }
             Err(e) => match e {
                 SdkError::ResponseError(e) => {
@@ -177,7 +183,7 @@ impl S3RegistoryStorage {
 }
 
 impl RegistryStorage for S3RegistoryStorage {
-    fn get_index(
+    fn get_index_file(
         &self,
         headers: &axum::http::HeaderMap,
         index_path: &str,
@@ -189,7 +195,7 @@ impl RegistryStorage for S3RegistoryStorage {
         )
     }
 
-    fn get_crate(
+    fn get_crate_file(
         &self,
         headers: &axum::http::HeaderMap,
         crate_name: &str,
@@ -200,5 +206,103 @@ impl RegistryStorage for S3RegistoryStorage {
             self.config.crate_bucket.clone(),
             format!("{}{crate_name}/{version}", self.config.crate_prefix),
         )
+    }
+
+    #[cfg(feature = "api")]
+    async fn get_index_data(
+        &self,
+        crate_name: &str,
+    ) -> Result<Option<Vec<crate::index::IndexData>>, RegistryError>
+    where
+        Self: Sized,
+    {
+        let obj_res = self
+            .client
+            .get_object()
+            .bucket(&self.config.index_bucket)
+            .key(self.crate_name_to_index_key(crate_name))
+            .send()
+            .await;
+        let obj = match obj_res {
+            Ok(obj) => obj,
+            Err(ref e)
+                if e.as_service_error()
+                    .filter(|se| se.is_no_such_key())
+                    .is_some() =>
+            {
+                return Ok(None)
+            }
+            Err(e) => return Err(RegistryError::from_s3_error(e.into())),
+        };
+        let mut index_list = vec![];
+        let mut body = obj.body.into_async_read().lines();
+        while let Some(line) = body.next_line().await.map_err(RegistryError::new)? {
+            let data = serde_json::from_str(&line).map_err(RegistryError::SerDeOther)?;
+            index_list.push(data);
+        }
+        Ok(Some(index_list))
+    }
+
+    #[cfg(feature = "api")]
+    async fn put_all_index(
+        &self,
+        index_path: &str,
+        data: Vec<crate::index::IndexData>,
+    ) -> Result<(), RegistryError> {
+        let mut vec = Vec::new();
+        for line in data {
+            vec.extend(serde_json::to_vec(&line).map_err(RegistryError::SerDeOther)?);
+        }
+        self.client
+            .put_object()
+            .bucket(&self.config.index_bucket)
+            .key(format!("{}{}", self.config.index_prefix, index_path))
+            .body(vec.into())
+            .send()
+            .await
+            .map_err(RegistryError::new)?;
+        Ok(())
+    }
+
+    #[cfg(feature = "api")]
+    async fn put_crate(
+        &self,
+        crate_name: &str,
+        version: &str,
+        data: &[u8],
+    ) -> Result<(), RegistryError> {
+        self.client
+            .put_object()
+            .bucket(&self.config.crate_bucket)
+            .key(format!(
+                "{}{}/{}",
+                self.config.crate_prefix, crate_name, version
+            ))
+            .body(data.to_vec().into())
+            .send()
+            .await
+            .map_err(RegistryError::new)?;
+        Ok(())
+    }
+
+    #[cfg(feature = "api")]
+    async fn list_crate(
+        &self,
+        _query: &str,
+        _page_size: usize,
+        _page: usize,
+    ) -> Result<crate::api::search::SearchResponse, RegistryError> {
+        Err(RegistryError::NotSupported)
+    }
+}
+
+impl RegistryError {
+    pub fn from_s3_error(error: aws_sdk_s3::Error) -> Self {
+        match error {
+            aws_sdk_s3::Error::NoSuchKey(_) | aws_sdk_s3::Error::NotFound(_) => {
+                RegistryError::NotFound
+            }
+            e => RegistryError::new(e),
+        }
     }
 }

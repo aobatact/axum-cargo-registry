@@ -4,7 +4,12 @@ env_files = [
 
 [tasks.local-run]
 command = "cargo"
-args = ["run", "--bin", "local-axum-cargo-registry", ]
+args = ["run", "--bin", "local-axum-cargo-registry", "--features" ,"api" ]
+workspace = false
+
+[tasks.local-run-watch]
+command = "cargo"
+args = ["watch", "-x", "run --bin local-axum-cargo-registry --features api"]
 workspace = false
 
 [tasks.download-test-crate]
@@ -17,7 +22,7 @@ crate_target="crate-test/local-storage/crates/try-partialord"
 curl https://crates.io/api/v1/crates/try-partialord/0.1.3/download > $crate_target/0.1.3.crate
 '''
 
-[tasks.local-run-check]
+[tasks.import-check]
 workspace = false
 script = '''
 cd crate-test/import-test-crate
@@ -53,4 +58,14 @@ workspace = false
 script = '''
 aws s3 sync crate-test/local-storage/index s3://index
 aws s3 sync crate-test/local-storage/crates s3://crates
+'''
+
+[tasks.local-publish-test]
+workspace = false
+script = '''
+cd crate-test/local-storage
+rm -rf index/ex/po
+rm -rf crates/export-test-lib
+cd ../export-test-lib
+cargo publish --allow-dirty
 '''
